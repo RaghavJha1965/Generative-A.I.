@@ -23,7 +23,7 @@ app.use(express.json());
 // Google Sheets setup
 const sheets = google.sheets('v4');
 const auth = new google.auth.GoogleAuth({
-  keyFile: 'server/service_account.json',  // Path to your service account JSON file
+  keyFile: 'service_account.json',  // Path to your service account JSON file
   scopes: ['https://www.googleapis.com/auth/spreadsheets'],
 });
 
@@ -72,6 +72,7 @@ const PORT = 5001;  // Explicitly set to 5001
 
 mongoose.connect('mongodb://localhost:27017/genai-platform')
   .then(() => {
+    console.log('AI API Key:', process.env.AI_API_KEY);
     console.log('Connected to MongoDB');
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
@@ -88,45 +89,70 @@ const sanitizeInput = (input) => input.replace(/<[^>]*>?/gm, '');
 // API route to handle file and text submissions
 app.post('/api/submit-requirement', upload.single('file'), async (req, res) => {
   try {
+    // Validate and handle the uploaded file
     const file = req.file ? req.file.filename : null;
+    if (!req.body.text) {
+      return res.status(400).json({ error: 'Text field is required.' });
+    }
+
+    // Sanitize the input text
     const text = req.body.text;
     const sanitizedText = sanitizeInput(text);
 
     // Save the sanitized requirement data to MongoDB
     const newRequirement = new Requirement({ file, text: sanitizedText });
     await newRequirement.save();
+    console.log('Requirement saved:', newRequirement);
 
-    // Securely send the sanitized text to a Generative AI API
-    const aiResponse = await fetch('https://api.openai.com/v1/completions', 
-      {
+    // Send the sanitized text to the Generative AI API
+    const aiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.AI_API_KEY}`,  // Secure API Key from .env
+        'Authorization': `Bearer ${process.env.AI_API_KEY}`, // Secure API Key from .env
       },
       body: JSON.stringify({
-        model: 'gpt-3.5-turbo',  // Use the correct model
-        prompt: sanitizedText,
-        max_tokens: 100,  // Specify the max tokens for the response
+        model: 'gpt-3.5-turbo', // Use the correct model
+        messages: [
+          { role: 'system', content: 'You are an assistant that generates code based on user requirements.' },
+          { role: 'user', content: sanitizedText }
+        ],
+        max_tokens: 100, // Specify the max tokens for the response
       }),
     });
 
+
     if (!aiResponse.ok) {
-      throw new Error('Failed to get a response from AI');
+      const errorDetails = await aiResponse.text();
+      console.log('AI API Key:', process.env.AI_API_KEY);
+      console.error('AI API Error:', errorDetails);
+      throw new Error('Failed to get a response from AI API');
     }
 
     const aiResult = await aiResponse.json();
-    const generatedCode = aiResult.generatedCode;
+    console.log('Full AI Response:', JSON.stringify(aiResult, null, 2));
 
-    // Append the AI result to Google Sheets (pre-configured)
+    const generatedCode = aiResult.choices?.[0]?.message?.content?.trim();
+    if (!generatedCode) {
+      console.error('Unexpected AI Response Structure:', aiResult);
+      throw new Error('AI did not return a valid response');
+    }
+
+    console.log('Generated code from AI:', generatedCode);
+
+    // Append the AI result to Google Sheets
     await appendToGoogleSheet(sanitizedText, generatedCode);
 
-    // Respond to frontend with AI results
-    res.status(200).json({ message: 'Requirement processed and sent to Google Sheets', generatedCode });
-
+    // Respond to the frontend
+    res.status(200).json({
+      message: 'Requirement processed and sent to Google Sheets',
+      generatedCode,
+    });
   } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ error: 'Error processing the requirement' });
+    console.error('Error processing the requirement:', error.message);
+    res.status(500).json({
+      error: 'Error processing the requirement',
+      details: error.message,
+    });
   }
 });
-
