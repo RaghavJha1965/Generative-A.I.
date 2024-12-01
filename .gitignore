@@ -23,3 +23,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+server/service_account.json
