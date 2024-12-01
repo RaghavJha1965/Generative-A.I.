@@ -97,18 +97,13 @@ app.post('/api/submit-requirement', upload.single('file'), async (req, res) => {
     await newRequirement.save();
 
     // Securely send the sanitized text to a Generative AI API
-    const aiResponse = await fetch('https://api.openai.com/v1/completions', 
-      {
+    const aiResponse = await fetch('https://api.generative-ai.com/v1/generate', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${process.env.AI_API_KEY}`,  // Secure API Key from .env
       },
-      body: JSON.stringify({
-        model: 'gpt-3.5-turbo',  // Use the correct model
-        prompt: sanitizedText,
-        max_tokens: 100,  // Specify the max tokens for the response
-      }),
+      body: JSON.stringify({ prompt: sanitizedText }),
     });
 
     if (!aiResponse.ok) {
@@ -130,3 +125,7 @@ app.post('/api/submit-requirement', upload.single('file'), async (req, res) => {
   }
 });
 
+// Start the server on port 5000
+app.listen(5000), () => {
+  console.log('Backend server running on port 5000');
+};

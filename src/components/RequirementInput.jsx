@@ -28,7 +28,7 @@ function RequirementInput() {
     formData.append('text', text);
 
     try {
-      const response = await fetch('http://localhost:5000/api/submit-requirement', {
+      const response = await fetch('http://localhost:5001/api/submit-requirement', {
         method: 'POST',
         body: formData,
       });
